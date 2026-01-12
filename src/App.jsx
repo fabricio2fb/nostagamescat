@@ -158,33 +158,124 @@ function flattenDatabase(db) {
   return games;
 }
 
+// --- CREDENCIAIS (HASH SHA-256) ---
+const EMAIL_HASH = "6c1d162092e4828cb7abb1d6e802a47b693d79185e5b63022128f5e1be95ff42";
+const PASS_HASH = "bb3abc9277e6bb56f44ff114d3fabb6fc9e2f5cfaacef38b30809d2a43cc8b5c";
+
+async function sha256(message) {
+  const msgBuffer = new TextEncoder().encode(message);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 export default function App() {
-  const [clientMode, setClientMode] = useState(false);
-  const [clientGames, setClientGames] = useState([]);
+  const [clientGames, setClientGames] = useState(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const data = params.get('data');
+
     if (data) {
+      // MODO CLIENTE (Link Compartilhado)
       try {
-        const decoded = JSON.parse(atob(data));
-        setClientGames(decoded);
-        setClientMode(true);
-      } catch (e) {
-        console.error("Erro ao decodificar dados", e);
+        const jsonString = atob(data);
+        const parsedGames = JSON.parse(jsonString);
+        setClientGames(parsedGames);
+      } catch (err) {
+        console.error("Erro ao decodificar dados", err);
+      }
+    } else {
+      // MODO ADMIN - Verificar Login
+      const token = localStorage.getItem('admin_token');
+      if (token === 'LOGGED_IN') {
+        setIsAuthenticated(true);
       }
     }
+    setLoading(false);
   }, []);
 
-  if (clientMode) {
+  if (loading) return <div className="min-h-screen bg-slate-50 flex items-center justify-center">Carregando...</div>;
+
+  // VISÃO CLIENTE (Prioridade)
+  if (clientGames) {
     return <ClientView games={clientGames} />;
   }
 
-  return <AdminView />;
+  // VISÃO ADMIN (Protegida)
+  if (isAuthenticated) {
+    return <AdminView onLogout={() => {
+      localStorage.removeItem('admin_token');
+      setIsAuthenticated(false);
+    }} />;
+  }
+
+  // TELA DE LOGIN
+  return <Login onLogin={() => setIsAuthenticated(true)} />;
+}
+
+function Login({ onLogin }) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+
+    const emailHash = await sha256(email);
+    const passHash = await sha256(password);
+
+    if (emailHash === EMAIL_HASH && passHash === PASS_HASH) {
+      localStorage.setItem('admin_token', 'LOGGED_IN');
+      onLogin();
+    } else {
+      setError('Credenciais incorretas.');
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
+      <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-sm">
+        <div className="flex justify-center mb-6">
+          <img src="/logo.png" alt="Logo" className="h-16 w-auto object-contain" />
+        </div>
+        <h2 className="text-2xl font-bold text-center text-slate-800 mb-6">Acesso Restrito</h2>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1">Email</label>
+            <input
+              type="email"
+              required
+              className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1">Senha</label>
+            <input
+              type="password"
+              required
+              className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+            />
+          </div>
+          {error && <p className="text-red-500 text-sm text-center">{error}</p>}
+          <button type="submit" className="w-full bg-indigo-600 text-white font-bold py-3 rounded-xl hover:bg-indigo-700 transition">
+            Entrar
+          </button>
+        </form>
+      </div>
+    </div>
+  );
 }
 
 // --- MODO ADMINISTRADOR ---
-function AdminView() {
+function AdminView({ onLogout }) {
   const [games, setGames] = useState(() => {
     const saved = localStorage.getItem('my_game_catalog_v2');
     if (saved) return JSON.parse(saved);
@@ -341,6 +432,7 @@ Em caso de dúvidas, fale com o suporte.`;
           </div>
 
           <div className="hidden sm:flex items-center gap-2">
+            <button onClick={onLogout} className="text-xs text-slate-400 hover:text-red-500 underline mr-4">Sair</button>
             <button onClick={resetDatabase} className="text-xs text-slate-400 hover:text-red-500 underline mr-2">Resetar DB</button>
             <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-3 rounded-xl font-bold text-sm shadow-md transition-all active:scale-95">
               <Plus size={18} /> Adicionar
