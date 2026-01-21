@@ -22,7 +22,9 @@ import {
 
   ArrowLeft,
   MessageCircle,
-  ChevronDown
+  ChevronDown,
+  Loader2,
+  Check
 } from 'lucide-react';
 
 import pspImg from './PSP.png';
@@ -264,6 +266,45 @@ export default function App() {
   return <StoreView />;
 }
 
+// --- PROCESSING VIEW ---
+function ProcessingView({ onBack }) {
+  return (
+    <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 text-center">
+      <div className="bg-slate-800 p-8 rounded-3xl shadow-2xl max-w-md w-full border border-slate-700">
+        <div className="w-20 h-20 bg-indigo-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
+          <Loader2 size={40} className="text-indigo-400 animate-spin" />
+        </div>
+
+        <h2 className="text-3xl font-black text-white mb-2">Aguardando Pagamento...</h2>
+        <p className="text-slate-400 mb-8">
+          Abrimos a página de pagamento em uma nova aba.
+          <br />
+          Conclua o pagamento para receber seus jogos.
+        </p>
+
+        <div className="space-y-3">
+          <div className="p-4 bg-indigo-900/30 rounded-xl border border-indigo-500/30 flex items-center gap-3 text-left">
+            <div className="bg-indigo-500/20 p-2 rounded-lg">
+              <Check className="text-indigo-400" size={20} />
+            </div>
+            <div>
+              <p className="text-white font-bold text-sm">Status do Pedido</p>
+              <p className="text-indigo-300 text-xs">Aguardando confirmação...</p>
+            </div>
+          </div>
+
+          <button
+            onClick={onBack}
+            className="w-full py-4 bg-white text-slate-900 rounded-xl font-bold hover:bg-slate-200 transition-colors mt-4"
+          >
+            Já realizei o pagamento
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // --- LANDING PAGE (OLD WAY) ---
 function LandingPage({ onSelectPlatform }) {
   const platforms = [
@@ -345,6 +386,7 @@ function StoreView({ initialPlatform = "Todos", onBack }) {
   const [activePlatform, setActivePlatform] = useState(initialPlatform);
   const [showCartMobile, setShowCartMobile] = useState(false);
   const [isCheckoutLoading, setIsCheckoutLoading] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const isSinglePlatform = initialPlatform !== "Todos";
   const theme = PLATFORM_LOGOS[activePlatform] || PLATFORM_LOGOS["Todos"];
@@ -394,7 +436,9 @@ function StoreView({ initialPlatform = "Todos", onBack }) {
         const data = await response.json();
         // If webhook returns a specific payment URL, use it
         if (data && data.url) {
-          window.location.href = data.url;
+          setIsCheckoutLoading(false);
+          setIsProcessing(true);
+          window.open(data.url, '_blank');
           return;
         }
       }
@@ -408,11 +452,16 @@ function StoreView({ initialPlatform = "Todos", onBack }) {
     setIsCheckoutLoading(false);
 
     if (link) {
+      setIsProcessing(true);
       window.open(link, '_blank');
     } else {
       alert(`Não existe um link configurado para o valor total de R$ ${total},00 (${cart.length} jogos).\n\nPor favor, contate o admin ou adicione mais jogos.`);
     }
   };
+
+  if (isProcessing) {
+    return <ProcessingView onBack={() => setIsProcessing(false)} />;
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
