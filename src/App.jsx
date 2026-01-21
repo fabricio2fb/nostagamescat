@@ -44,6 +44,14 @@ const PLATFORM_LOGOS = {
   "Todos": { color: "from-indigo-600 to-indigo-900", accent: "bg-indigo-600", text: "text-indigo-600", border: "border-indigo-600", icon: Gamepad2, label: "ALL" }
 };
 
+const DEFAULT_CHECKOUT_LINKS = {
+  20: "https://www.ggcheckout.com/checkout/v2/EG4XxmScaufriyPctuhN",
+  40: "https://www.ggcheckout.com/checkout/v2/zTK2wNRv0zci9GVLtMk2",
+  60: "https://www.ggcheckout.com/checkout/v2/WHs4aCNV0dsqlxPWZGZj",
+  80: "",
+  100: ""
+};
+
 // Base de dados fornecida pelo usuário
 const INITIAL_DATABASE = {
   psp: {
@@ -328,7 +336,7 @@ function StoreView({ initialPlatform = "Todos", onBack }) {
   const [checkoutLinks] = useState(() => {
     const saved = localStorage.getItem('checkout_links_config');
     if (saved) return JSON.parse(saved);
-    return {};
+    return DEFAULT_CHECKOUT_LINKS;
   });
 
   const [cart, setCart] = useState([]);
@@ -651,14 +659,7 @@ function AdminView({ onLogout }) {
   const [checkoutLinks, setCheckoutLinks] = useState(() => {
     const saved = localStorage.getItem('checkout_links_config');
     if (saved) return JSON.parse(saved);
-    // Configuração inicial padrão
-    return {
-      20: "https://www.ggcheckout.com/checkout/v2/EG4XxmScaufriyPctuhN",
-      40: "https://www.ggcheckout.com/checkout/v2/zTK2wNRv0zci9GVLtMk2",
-      60: "https://www.ggcheckout.com/checkout/v2/WHs4aCNV0dsqlxPWZGZj",
-      80: "",
-      100: ""
-    }
+    return DEFAULT_CHECKOUT_LINKS;
   });
 
   const [searchTerm, setSearchTerm] = useState("");
