@@ -25,11 +25,11 @@ import {
   ChevronDown
 } from 'lucide-react';
 
-import pspImg from './PSP.PNG';
-import ps2Img from './PS2.PNG';
-import ps3Img from './PS3.PNG';
-import emBreveImg from './EMBREVE.PNG';
-import xbox360Img from './xbox360.PNG';
+import pspImg from './PSP.png';
+import ps2Img from './PS2.png';
+import ps3Img from './PS3.png';
+import emBreveImg from './EMBREVE.png';
+import xbox360Img from './xbox360.png';
 
 // Plataformas disponíveis
 const PLATFORMS = ["Todos", "PSP", "PS2", "PS3", "PS4", "Xbox 360"];
