@@ -14,11 +14,35 @@ import {
   Save,
   Copy,
   Edit2,
-  ImageOff
+  ImageOff,
+  ShoppingCart,
+  CreditCard,
+  Lock,
+  Settings,
+
+  ArrowLeft,
+  MessageCircle,
+  ChevronDown
 } from 'lucide-react';
+
+import pspImg from './PSP.PNG';
+import ps2Img from './PS2.PNG';
+import ps3Img from './PS3.PNG';
+import emBreveImg from './EMBREVE.PNG';
+import xbox360Img from './xbox360.PNG';
 
 // Plataformas disponíveis
 const PLATFORMS = ["Todos", "PSP", "PS2", "PS3", "PS4", "Xbox 360"];
+const GAME_PRICE = 20;
+
+const PLATFORM_LOGOS = {
+  PSP: { color: "from-blue-400 to-blue-600", accent: "bg-blue-600", text: "text-blue-600", border: "border-blue-600", icon: Gamepad2, label: "HANDHELD" },
+  PS2: { color: "from-blue-600 to-blue-900", accent: "bg-blue-800", text: "text-blue-800", border: "border-blue-800", icon: Gamepad2, label: "LEGENDARY" },
+  PS3: { color: "from-slate-700 to-slate-900", accent: "bg-slate-800", text: "text-slate-800", border: "border-slate-800", icon: Gamepad2, label: "HD ERA" },
+  PS4: { color: "from-indigo-600 to-indigo-900", accent: "bg-indigo-800", text: "text-indigo-800", border: "border-indigo-800", icon: Gamepad2, label: "MODERN" },
+  "Xbox 360": { color: "from-green-500 to-green-700", accent: "bg-green-600", text: "text-green-600", border: "border-green-600", icon: Gamepad2, label: "MICROSOFT" },
+  "Todos": { color: "from-indigo-600 to-indigo-900", accent: "bg-indigo-600", text: "text-indigo-600", border: "border-indigo-600", icon: Gamepad2, label: "ALL" }
+};
 
 // Base de dados fornecida pelo usuário
 const INITIAL_DATABASE = {
@@ -129,12 +153,11 @@ const INITIAL_DATABASE = {
   }
 };
 
-// Função helper para transformar o objeto 'database' em um array plano de jogos
+// --- FUNÇÕES HELPER ---
 function flattenDatabase(db) {
   let games = [];
   Object.keys(db).forEach(key => {
     const platformData = db[key];
-    // Mapear nome da chave para o nome usado nos filtros
     let platformName = "Outros";
     if (key === 'psp') platformName = "PSP";
     if (key === 'ps2') platformName = "PS2";
@@ -145,20 +168,20 @@ function flattenDatabase(db) {
     const allGames = [...(platformData.fifa || []), ...(platformData.pes || [])];
 
     allGames.forEach(g => {
-      if (!g.id) return; // Pular placeholders vazios se não tiverem ID
+      if (!g.id) return;
       games.push({
         id: g.id,
         name: g.name,
         platform: platformName,
-        link: g.link || "", // Usa o link do banco de dados se existir
-        img: g.img
+        link: g.link || "",
+        img: g.img,
+        price: GAME_PRICE
       });
     });
   });
   return games;
 }
 
-// --- CREDENCIAIS (HASH SHA-256) ---
 const EMAIL_HASH = "6c1d162092e4828cb7abb1d6e802a47b693d79185e5b63022128f5e1be95ff42";
 const PASS_HASH = "bb3abc9277e6bb56f44ff114d3fabb6fc9e2f5cfaacef38b30809d2a43cc8b5c";
 
@@ -169,51 +192,717 @@ async function sha256(message) {
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
+// --- APP ---
 export default function App() {
   const [clientGames, setClientGames] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [viewMode, setViewMode] = useState('store');
+  const [selectedPlatform, setSelectedPlatform] = useState(null);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const data = params.get('data');
+    const admin = params.get('admin');
 
     if (data) {
-      // MODO CLIENTE (Link Compartilhado)
       try {
         const jsonString = atob(data);
         const parsedGames = JSON.parse(jsonString);
         setClientGames(parsedGames);
+        setViewMode('client');
       } catch (err) {
         console.error("Erro ao decodificar dados", err);
       }
-    } else {
-      // MODO ADMIN - Verificar Login
+    } else if (admin !== null) {
       const token = localStorage.getItem('admin_token');
       if (token === 'LOGGED_IN') {
         setIsAuthenticated(true);
+      } else {
+        setIsAuthenticated(false);
       }
+      setViewMode('admin');
+    } else {
+      setViewMode('store');
     }
     setLoading(false);
   }, []);
 
   if (loading) return <div className="min-h-screen bg-slate-50 flex items-center justify-center">Carregando...</div>;
 
-  // VISÃO CLIENTE (Prioridade)
-  if (clientGames) {
+  if (viewMode === 'client' && clientGames) {
     return <ClientView games={clientGames} />;
   }
 
-  // VISÃO ADMIN (Protegida)
-  if (isAuthenticated) {
-    return <AdminView onLogout={() => {
-      localStorage.removeItem('admin_token');
-      setIsAuthenticated(false);
-    }} />;
+  if (viewMode === 'admin') {
+    if (isAuthenticated) {
+      return <AdminView onLogout={() => {
+        localStorage.removeItem('admin_token');
+        setIsAuthenticated(false);
+        window.location.search = '';
+      }} />;
+    } else {
+      return <Login onLogin={() => setIsAuthenticated(true)} />;
+    }
   }
 
-  // TELA DE LOGIN
-  return <Login onLogin={() => setIsAuthenticated(true)} />;
+  if (viewMode === 'store') {
+    if (!selectedPlatform) {
+      return <LandingPage onSelectPlatform={setSelectedPlatform} />;
+    }
+    return <StoreView initialPlatform={selectedPlatform} onBack={() => setSelectedPlatform(null)} />;
+  }
+
+  return <StoreView />;
+}
+
+// --- LANDING PAGE (OLD WAY) ---
+function LandingPage({ onSelectPlatform }) {
+  const platforms = [
+    { id: "PSP", name: "PSP", subtitle: "HANDHELD", img: pspImg },
+    { id: "ps2", name: "PlayStation 2", subtitle: "LEGENDARY", label: "PS2", img: ps2Img },
+    { id: "ps3", name: "PS3", subtitle: "HD ERA", img: ps3Img },
+    { id: "ps4", name: "PS4", subtitle: "MODERN", extra: "EM BREVE", img: emBreveImg },
+    { id: "xbox360", name: "Xbox 360", subtitle: "MICROSOFT", img: xbox360Img }
+  ];
+
+  return (
+    <div className="min-h-screen bg-slate-900 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-blue-900 via-slate-900 to-black flex flex-col items-center justify-center p-4">
+
+      <header className="absolute top-0 left-0 w-full p-6 flex justify-between items-center z-10">
+        <img src="/logo.png" alt="Nostalgia Fut" className="h-12 w-auto object-contain" />
+        <a href="?admin=true" className="text-white/20 hover:text-white transition-colors">
+          <Lock size={20} />
+        </a>
+      </header>
+
+      <div className="text-center mb-12 mt-20 md:mt-0">
+        <h1 className="text-4xl md:text-6xl font-black text-white tracking-tighter mb-2">ESCOLHA A SUA</h1>
+        <h2 className="text-4xl md:text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-500 italic transform -skew-x-12">PLATAFORMA</h2>
+        <div className="w-24 h-1.5 bg-blue-500 mx-auto mt-4 rounded-full shadow-[0_0_15px_rgba(59,130,246,0.5)]"></div>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 max-w-7xl mx-auto w-full px-4">
+        {platforms.map((p) => (
+          <button
+            key={p.id}
+            onClick={() => onSelectPlatform(p.label || p.name)}
+            className="group relative w-full aspect-[9/16] bg-black/40 border-0 rounded-2xl overflow-hidden hover:shadow-[0_0_30px_rgba(59,130,246,0.3)] transition-all duration-300 transform hover:-translate-y-2"
+          >
+            {/* Background Image */}
+            <div className="absolute inset-0">
+              <img src={p.img} alt={p.name} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity duration-500" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
+            </div>
+
+            <div className="absolute bottom-0 left-0 w-full p-4 text-center z-10 flex flex-col items-center">
+              {p.extra && (
+                <span className="text-xl font-black text-white/90 mb-1 block shadow-black drop-shadow-md">{p.extra}</span>
+              )}
+              {!p.extra && (
+                <>
+                  <span className="text-[10px] font-bold tracking-[0.2em] text-blue-400 uppercase mb-1 drop-shadow-md">{p.subtitle}</span>
+                  <span className="text-2xl font-black text-white italic leading-none drop-shadow-md">{p.name}</span>
+                </>
+              )}
+            </div>
+          </button>
+        ))}
+      </div>
+
+      <footer className="absolute bottom-6 text-[10px] font-bold text-white/20 tracking-widest">
+        INSTAGRAM / TIKTOK @NOSTALGIAFUTP8 © 2026
+      </footer>
+    </div>
+  );
+}
+
+// --- LOJA ---
+function StoreView({ initialPlatform = "Todos", onBack }) {
+  const [games] = useState(() => {
+    const saved = localStorage.getItem('my_game_catalog_v2');
+    if (saved) return JSON.parse(saved);
+    return flattenDatabase(INITIAL_DATABASE);
+  });
+
+  const [checkoutLinks] = useState(() => {
+    const saved = localStorage.getItem('checkout_links_config');
+    if (saved) return JSON.parse(saved);
+    return {};
+  });
+
+  const [cart, setCart] = useState([]);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedPlatform, setSelectedPlatform] = useState(null);
+  const [activePlatform, setActivePlatform] = useState(initialPlatform);
+  const [showCartMobile, setShowCartMobile] = useState(false);
+  const [isCheckoutLoading, setIsCheckoutLoading] = useState(false);
+
+  const isSinglePlatform = initialPlatform !== "Todos";
+  const theme = PLATFORM_LOGOS[activePlatform] || PLATFORM_LOGOS["Todos"];
+
+  const filteredGames = useMemo(() => {
+    return games.filter(game => {
+      const matchesSearch = game.name.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesPlatform = activePlatform === "Todos" || game.platform === activePlatform;
+      return matchesSearch && matchesPlatform;
+    });
+  }, [games, searchTerm, activePlatform]);
+
+  const toggleCart = (game) => {
+    if (cart.find(g => g.id === game.id)) {
+      setCart(cart.filter(g => g.id !== game.id));
+    } else {
+      setCart([...cart, game]);
+      // Auto open remove - User prefers manual control
+    }
+  };
+
+  const handleCheckout = async () => {
+    if (cart.length === 0) return;
+    setIsCheckoutLoading(true);
+
+    const total = cart.length * GAME_PRICE;
+
+    try {
+      // 1. Prepare payload
+      const payload = {
+        cart: cart.map(item => ({ id: item.id, name: item.name, platform: item.platform, price: item.price })),
+        total: total,
+        platform: activePlatform,
+        timestamp: new Date().toISOString()
+      };
+
+      // 2. Send to Webhook
+      const response = await fetch("https://www.nostalgia.shop/webhook", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        // If webhook returns a specific payment URL, use it
+        if (data && data.url) {
+          window.location.href = data.url;
+          return;
+        }
+      }
+    } catch (error) {
+      console.error("Webhook error:", error);
+      // Fall through to default behavior on error
+    }
+
+    // 3. Fallback to existing logic if webhook doesn't provide URL or fails
+    const link = checkoutLinks[total];
+    setIsCheckoutLoading(false);
+
+    if (link) {
+      window.open(link, '_blank');
+    } else {
+      alert(`Não existe um link configurado para o valor total de R$ ${total},00 (${cart.length} jogos).\n\nPor favor, contate o admin ou adicione mais jogos.`);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
+      <header className={`sticky top-0 z-30 bg-gradient-to-r ${theme.color} text-white shadow-md border-b border-white/10 px-4 py-3 md:px-8 md:py-4 transition-all duration-500`}>
+        <div className="max-w-6xl mx-auto flex items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            {onBack && (
+              <button onClick={onBack} className="group flex items-center gap-2 text-white/80 hover:text-white font-bold text-sm bg-white/10 hover:bg-white/20 px-4 py-2 rounded-full transition-all backdrop-blur-sm">
+                <ArrowLeft size={18} className="group-hover:-translate-x-1 transition-transform" />
+                <span className="hidden sm:inline">VOLTAR</span>
+              </button>
+            )}
+            <div className="flex items-center gap-2">
+              {/* Logo Filter fallback to separate visual if needed, but keeping main logo for now */}
+              <img src="/logo.png" alt="Logo" className="h-10 sm:h-12 w-auto object-contain brightness-0 invert" />
+            </div>
+            {isSinglePlatform && (
+              <span className="hidden md:inline-block px-3 py-1 bg-white/20 rounded-lg text-xs font-black tracking-widest uppercase text-white/90">
+                {activePlatform}
+              </span>
+            )}
+          </div>
+
+          <div className="relative w-full max-w-md hidden sm:block">
+            <Search className={`absolute left-3 top-1/2 -translate-y-1/2 ${theme.text}`} size={20} />
+            <input
+              type="text" placeholder={`Buscar jogos de ${activePlatform}...`}
+              className="w-full pl-10 pr-4 py-2.5 bg-white text-slate-900 border-none rounded-2xl focus:ring-2 focus:ring-white/50 transition-all font-medium"
+              value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+
+          <div className="flex items-center gap-4">
+            <a href="?admin=true" className="text-white/60 hover:text-white transition-colors" title="Admin">
+              <Lock size={16} />
+            </a>
+
+            <button onClick={() => setShowCartMobile(true)} className={`relative p-2 bg-white/10 text-white rounded-xl hover:bg-white/20 transition-colors`}>
+              <ShoppingCart size={24} />
+              {cart.length > 0 && (
+                <span className="absolute -top-1 -right-1 bg-white text-indigo-900 text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full shadow-sm">
+                  {cart.length}
+                </span>
+              )}
+            </button>
+          </div>
+        </div>
+        <div className="sm:hidden mt-3">
+          <div className="relative w-full">
+            <Search className={`absolute left-3 top-1/2 -translate-y-1/2 ${theme.text}`} size={18} />
+            <input
+              type="text" placeholder="Buscar..."
+              className="w-full pl-10 pr-4 py-2.5 bg-white text-slate-800 border-none rounded-xl focus:ring-2 focus:ring-white/50 transition-all text-sm font-medium"
+              value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-6xl mx-auto p-4 md:p-8 pb-32">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          <div className="lg:col-span-8">
+
+            {/* Show tabs ONLY if we are in 'Todos' mode */}
+            {!isSinglePlatform && (
+              <div className="flex gap-2 mb-8 overflow-x-auto pb-2 no-scrollbar px-1">
+                {PLATFORMS.map(p => (
+                  <button key={p} onClick={() => setActivePlatform(p)}
+                    className={`px-5 py-2.5 rounded-2xl text-sm font-bold whitespace-nowrap transition-all border ${activePlatform === p ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg' : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-300 shadow-sm'}`}>
+                    {p}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 gap-4">
+              {filteredGames.map(game => {
+                const inCart = cart.find(g => g.id === game.id);
+                return (
+                  <div key={game.id}
+                    className={`group relative bg-white rounded-2xl border-2 overflow-hidden transition-all hover:shadow-xl ${inCart ? `${theme.border} ring-2 ring-indigo-100` : 'border-slate-100 hover:border-slate-300'}`}>
+
+                    <div className="aspect-[3/4] bg-slate-100 relative overflow-hidden">
+                      {game.img && game.img !== "EMBREVE.png" ? (
+                        <img src={game.img} alt={game.name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
+                      ) : (
+                        <div className="flex items-center justify-center h-full text-slate-300"><Gamepad2 size={32} /></div>
+                      )}
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-60" />
+                      <div className="absolute top-2 right-2 bg-yellow-400 text-yellow-900 text-xs font-black px-2 py-0.5 rounded shadow-sm">
+                        R$ {GAME_PRICE}
+                      </div>
+                      <div className="absolute bottom-3 left-3 right-3 text-white">
+                        <span className="text-[10px] font-black uppercase bg-white/20 backdrop-blur-md px-2 py-0.5 rounded-md mb-1 inline-block">{game.platform}</span>
+                        <h3 className="font-bold leading-tight text-sm drop-shadow-sm">{game.name}</h3>
+                      </div>
+                    </div>
+
+                    <div className="p-3">
+                      <button onClick={() => toggleCart(game)}
+                        className={`w-full py-3 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 ${inCart ? 'bg-red-50 text-red-500 hover:bg-red-100' : `${theme.accent} text-white hover:opacity-90 shadow-lg`}`}>
+                        {inCart ? (
+                          <>Remover <Trash2 size={16} /></>
+                        ) : (
+                          <>Adicionar <Plus size={16} /></>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="hidden lg:block lg:col-span-4 ps-4">
+            <div className={`sticky top-28`}>
+              <CartPanel cart={cart} toggleCart={toggleCart} handleCheckout={handleCheckout} isCheckoutLoading={isCheckoutLoading} theme={theme} />
+            </div>
+          </div>
+        </div>
+      </main>
+
+      {/* Floating WhatsApp Button */}
+      <a
+        href="https://wa.me/5511999999999" // TODO: Add real number
+        target="_blank"
+        rel="noopener noreferrer"
+        className="fixed bottom-24 right-4 z-40 bg-green-500 text-white p-4 rounded-full shadow-lg hover:bg-green-600 transition-all hover:scale-110 flex items-center justify-center"
+      >
+        <MessageCircle size={28} />
+      </a>
+
+      {/* Mobile Cart Scenarios */}
+      {/* 1. Minimized Bar (visible when NOT expanded but User has items) */}
+      {!showCartMobile && cart.length > 0 && (
+        <div
+          onClick={() => setShowCartMobile(true)}
+          className={`fixed bottom-0 left-0 right-0 z-40 ${theme.accent} text-white p-4 rounded-t-2xl shadow-[0_-5px_20px_rgba(0,0,0,0.1)] cursor-pointer flex items-center justify-between lg:hidden animate-in slide-in-from-bottom duration-300 border-t border-white/20`}
+        >
+          <div className="flex items-center gap-3">
+            <div className="bg-white/20 p-2 rounded-lg">
+              <ShoppingCart size={20} />
+            </div>
+            <div>
+              <p className="text-xs font-medium text-white/80">Total ({cart.length} itens)</p>
+              <p className="font-black text-lg">R$ {cart.length * GAME_PRICE}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 text-xs font-bold bg-white/20 px-3 py-1.5 rounded-full">
+            VER CARRINHO <ChevronUp size={16} />
+          </div>
+        </div>
+      )}
+
+      {showCartMobile && (
+        <div className="fixed inset-0 z-50 lg:hidden">
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowCartMobile(false)} />
+          <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-[2rem] p-6 max-h-[85vh] overflow-y-auto shadow-2xl animate-in slide-in-from-bottom duration-300">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-black text-slate-800">Seu Carrinho ({cart.length})</h2>
+              <button onClick={() => setShowCartMobile(false)} className="p-2 bg-slate-100 rounded-full"><ChevronUp size={24} className="rotate-180" /></button>
+            </div>
+            <CartPanel cart={cart} toggleCart={toggleCart} handleCheckout={handleCheckout} isMobile isCheckoutLoading={isCheckoutLoading} theme={theme} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CartPanel({ cart, toggleCart, handleCheckout, isMobile, theme, isCheckoutLoading }) {
+  const total = cart.length * GAME_PRICE;
+  // Fallback theme if not provided
+  const t = theme || { accent: "bg-indigo-600", color: "from-indigo-600 to-indigo-900" };
+
+  return (
+    <div className={`bg-white rounded-3xl p-6 border border-slate-100 shadow-xl ${!isMobile && 'min-h-[400px]'}`}>
+      <div className="flex items-center gap-3 mb-6">
+        <ShoppingCart className="text-indigo-600" size={24} />
+        <h2 className="text-xl font-black text-slate-800">Carrinho</h2>
+      </div>
+
+      <div className="space-y-4 mb-8 max-h-[400px] overflow-y-auto custom-scrollbar pr-1">
+        {cart.length === 0 ? (
+          <div className="text-center py-12 text-slate-400 border-2 border-dashed border-slate-100 rounded-2xl">
+            <p>Seu carrinho está vazio.</p>
+            <p className="text-sm mt-2">Adicione jogos para começar!</p>
+          </div>
+        ) : (
+          cart.map(game => (
+            <div key={game.id} className="flex gap-3 items-center bg-slate-50 p-3 rounded-2xl group">
+              <div className="w-12 h-12 bg-white rounded-lg flex-shrink-0 overflow-hidden shadow-sm">
+                {game.img ? <img src={game.img} className="w-full h-full object-cover" /> : null}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-bold text-sm text-slate-700 truncate">{game.name}</p>
+                <div className="flex justify-between items-center">
+                  <p className="text-[10px] uppercase font-bold text-slate-400">{game.platform}</p>
+                  <p className="text-xs font-bold text-indigo-600">R$ {GAME_PRICE}</p>
+                </div>
+              </div>
+              <button onClick={() => toggleCart(game)} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors">
+                <Trash2 size={18} />
+              </button>
+            </div>
+          ))
+        )}
+      </div>
+
+      <div className="border-t border-slate-100 pt-6">
+        <div className="flex justify-between items-end mb-6">
+          <span className="text-sm font-medium text-slate-500">Total ({cart.length} itens)</span>
+          <span className="text-3xl font-black text-slate-800">R$ {total}</span>
+        </div>
+        <button onClick={handleCheckout} disabled={cart.length === 0 || isCheckoutLoading}
+          className={`w-full py-4 ${t.accent} text-white rounded-2xl font-black text-lg shadow-lg hover:opacity-90 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2`}>
+          {isCheckoutLoading ? (
+            <>
+              <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              PROCESSANDO...
+            </>
+          ) : (
+            <>
+              <CreditCard size={20} />
+              PAGAR AGORA
+            </>
+          )}
+        </button>
+        <p className="text-xs text-center text-slate-400 mt-4">Entrega via link automático</p>
+      </div>
+    </div>
+  );
+}
+
+// --- ADMIN ---
+function AdminView({ onLogout }) {
+  const [games, setGames] = useState(() => {
+    const saved = localStorage.getItem('my_game_catalog_v2');
+    if (saved) return JSON.parse(saved);
+    return flattenDatabase(INITIAL_DATABASE);
+  });
+
+  // Links de checkout globais (chave = preço total)
+  const [checkoutLinks, setCheckoutLinks] = useState(() => {
+    const saved = localStorage.getItem('checkout_links_config');
+    if (saved) return JSON.parse(saved);
+    // Configuração inicial padrão
+    return {
+      20: "https://www.ggcheckout.com/checkout/v2/EG4XxmScaufriyPctuhN",
+      40: "https://www.ggcheckout.com/checkout/v2/zTK2wNRv0zci9GVLtMk2",
+      60: "https://www.ggcheckout.com/checkout/v2/WHs4aCNV0dsqlxPWZGZj",
+      80: "",
+      100: ""
+    }
+  });
+
+  const [searchTerm, setSearchTerm] = useState("");
+  const [activePlatform, setActivePlatform] = useState("Todos");
+  const [currentTab, setCurrentTab] = useState("jogos"); // jogos | config
+
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [gameToEdit, setGameToEdit] = useState(null);
+  const [newGame, setNewGame] = useState({ name: '', platform: 'PSP', link: '', img: '' });
+
+  useEffect(() => {
+    localStorage.setItem('my_game_catalog_v2', JSON.stringify(games));
+  }, [games]);
+
+  useEffect(() => {
+    localStorage.setItem('checkout_links_config', JSON.stringify(checkoutLinks));
+  }, [checkoutLinks]);
+
+  const filteredGames = useMemo(() => {
+    return games.filter(game => {
+      const matchesSearch = game.name.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesPlatform = activePlatform === "Todos" || game.platform === activePlatform;
+      return matchesSearch && matchesPlatform;
+    });
+  }, [games, searchTerm, activePlatform]);
+
+  const handleSaveEdit = (e) => {
+    e.preventDefault();
+    if (!gameToEdit) return;
+    setGames(games.map(g => g.id === gameToEdit.id ? gameToEdit : g));
+    setGameToEdit(null);
+  };
+
+  const handleAddGame = (e) => {
+    e.preventDefault();
+    if (!newGame.name || !newGame.link) return;
+    const gameToAdd = { ...newGame, id: Date.now().toString() };
+    setGames([...games, gameToAdd]);
+    setNewGame({ name: '', platform: 'PSP', link: '', img: '' });
+    setShowAddModal(false);
+  };
+
+  const deleteFromLibrary = (id) => {
+    if (window.confirm("Deseja eliminar este jogo da sua biblioteca permanentemente?")) {
+      setGames(games.filter(g => g.id !== id));
+      setGameToEdit(null);
+    }
+  };
+
+  const resetDatabase = () => {
+    if (window.confirm("Isso irá resetar todos os links editados para o padrão. Tem certeza?")) {
+      setGames(flattenDatabase(INITIAL_DATABASE));
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-100 text-slate-900 font-sans">
+      <header className="bg-slate-900 text-white px-8 py-6 shadow-lg">
+        <div className="max-w-6xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <h1 className="text-xl font-bold">Painel Administrativo</h1>
+            <div className="flex bg-slate-800 rounded-lg p-1">
+              <button onClick={() => setCurrentTab("jogos")} className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${currentTab === "jogos" ? "bg-indigo-600 text-white shadow" : "text-slate-400 hover:text-white"}`}>Jogos</button>
+              <button onClick={() => setCurrentTab("config")} className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${currentTab === "config" ? "bg-indigo-600 text-white shadow" : "text-slate-400 hover:text-white"}`}>Pagamentos</button>
+            </div>
+          </div>
+          <div className="flex gap-4">
+            <button onClick={resetDatabase} className="text-xs text-slate-400 hover:text-red-400">Resetar DB</button>
+            <button onClick={onLogout} className="text-sm bg-slate-700 px-4 py-2 rounded-lg hover:bg-slate-600">Sair</button>
+            <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg font-bold text-sm">
+              <Plus size={18} /> Adicionar Jogo
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-6xl mx-auto p-8">
+
+        {/* ABA JOGOS */}
+        {currentTab === "jogos" && (
+          <>
+            <div className="flex items-center justify-between mb-8">
+              <div className="flex gap-2 overflow-x-auto">
+                {PLATFORMS.map(p => (
+                  <button key={p} onClick={() => setActivePlatform(p)}
+                    className={`px-4 py-2 rounded-xl text-sm font-bold transition-all border ${activePlatform === p ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-slate-300 text-slate-500'}`}>
+                    {p}
+                  </button>
+                ))}
+              </div>
+              <div className="w-64">
+                <input type="text" placeholder="Buscar..."
+                  className="w-full px-4 py-2 rounded-xl border border-slate-300"
+                  value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {filteredGames.map(game => (
+                <div key={game.id} onClick={() => setGameToEdit({ ...game })}
+                  className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 cursor-pointer hover:border-indigo-400 transition-all">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-12 h-12 bg-slate-100 rounded-lg overflow-hidden">
+                      {game.img && <img src={game.img} className="w-full h-full object-cover" />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-bold text-sm truncate">{game.name}</h3>
+                      <p className="text-xs text-slate-500">{game.platform}</p>
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <div className={`text-xs px-2 py-1 rounded-md truncate font-mono ${game.link ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                      {game.link ? 'Download: Configurado' : 'Download: Pendente'}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        {/* ABA CONFIGURAÇÃO DE PAGAMENTO */}
+        {currentTab === "config" && (
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 max-w-3xl mx-auto">
+            <div className="flex items-center gap-4 mb-6">
+              <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl">
+                <CreditCard size={32} />
+              </div>
+              <div>
+                <h2 className="text-2xl font-black text-slate-800">Links de Pagamento por Valor</h2>
+                <p className="text-slate-500">Configure um link específico para cada faixa de preço.</p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              {[20, 40, 60, 80, 100, 120, 140, 160, 180, 200].map(price => (
+                <div key={price} className="flex items-center gap-4 p-4 bg-slate-50 rounded-xl border border-slate-100">
+                  <div className="w-24 font-bold text-slate-700 text-lg">R$ {price},00</div>
+                  <input
+                    type="text"
+                    placeholder="Cole o link do MercadoPago/Stripe aqui..."
+                    className="flex-1 p-3 border rounded-lg active:ring-2 focus:ring-2 focus:ring-indigo-500 outline-none"
+                    value={checkoutLinks[price] || ""}
+                    onChange={(e) => setCheckoutLinks({ ...checkoutLinks, [price]: e.target.value })}
+                  />
+                </div>
+              ))}
+              <p className="text-center text-slate-400 text-sm mt-4">Adicione valores adicionais editando o código se necessário.</p>
+            </div>
+          </div>
+        )}
+
+      </main>
+
+      {/* Modal Edit (Admin) - Somente Download agora */}
+      {gameToEdit && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm" onClick={() => setGameToEdit(null)} />
+          <form onSubmit={handleSaveEdit} className="relative bg-white w-full max-w-lg rounded-3xl p-8 shadow-2xl overflow-y-auto max-h-[90vh]">
+            <h2 className="text-2xl font-black text-slate-800 mb-6">Editar Jogo</h2>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1">Nome</label>
+                <input className="w-full p-3 bg-slate-50 border rounded-xl" value={gameToEdit.name} onChange={e => setGameToEdit({ ...gameToEdit, name: e.target.value })} />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1">Link de Download (Pós-compra)</label>
+                <input className="w-full p-3 bg-slate-50 border rounded-xl font-mono text-sm" value={gameToEdit.link} onChange={e => setGameToEdit({ ...gameToEdit, link: e.target.value })} placeholder="https://mega.nz/..." />
+                <p className="text-xs text-slate-500 mt-1">Este é o link que o cliente receberá após pagar.</p>
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1">Capa (URL)</label>
+                <input className="w-full p-3 bg-slate-50 border rounded-xl font-mono text-sm" value={gameToEdit.img} onChange={e => setGameToEdit({ ...gameToEdit, img: e.target.value })} />
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-8">
+              <button type="button" onClick={() => { if (window.confirm("Excluir jogo?")) deleteFromLibrary(gameToEdit.id); }} className="px-6 py-3 bg-red-100 text-red-600 font-bold rounded-xl hover:bg-red-200">Excluir</button>
+              <button type="submit" className="flex-1 py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 shadow-lg">Salvar Alterações</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Modal Add (Admin) */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/80" onClick={() => setShowAddModal(false)} />
+          <form onSubmit={handleAddGame} className="relative bg-white w-full max-w-lg rounded-3xl p-8 shadow-2xl">
+            <h2 className="text-xl font-black mb-4">Adicionar Novo Jogo</h2>
+            <div className="space-y-3">
+              <input required placeholder="Nome" className="w-full p-3 border rounded-xl" value={newGame.name} onChange={e => setNewGame({ ...newGame, name: e.target.value })} />
+              <select className="w-full p-3 border rounded-xl" value={newGame.platform} onChange={e => setNewGame({ ...newGame, platform: e.target.value })}>
+                {PLATFORMS.filter(p => p !== "Todos").map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
+              <input placeholder="Link Download" className="w-full p-3 border rounded-xl" value={newGame.link} onChange={e => setNewGame({ ...newGame, link: e.target.value })} />
+              <input placeholder="Link Imagem" className="w-full p-3 border rounded-xl" value={newGame.img} onChange={e => setNewGame({ ...newGame, img: e.target.value })} />
+            </div>
+            <button type="submit" className="w-full mt-6 bg-indigo-600 text-white font-bold py-3 rounded-xl">Criar Jogo</button>
+          </form>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// --- CLIENT VIEW ---
+function ClientView({ games }) {
+  return (
+    <div className="min-h-screen bg-slate-100 font-sans pb-20">
+      <header className="bg-indigo-600 text-white p-6 shadow-lg mb-8 text-center sticky top-0 z-30">
+        <h1 className="text-2xl font-black tracking-tight mb-2">SEUS JOGOS CHEGARAM! 🎮</h1>
+        <p className="text-indigo-100 text-sm">Clique abaixo para baixar cada jogo.</p>
+      </header>
+      <main className="max-w-md mx-auto px-4 space-y-4">
+        {games.map((game, index) => (
+          <div key={index} className="bg-white rounded-3xl shadow-md border-b-4 border-indigo-100 hover:border-indigo-200 transition-all transform hover:-translate-y-1 overflow-hidden">
+            <div className="h-48 bg-slate-200 w-full relative">
+              {game.img && game.img !== "EMBREVE.png" ? (
+                <img src={game.img} alt={game.name} className="w-full h-full object-cover" />
+              ) : (
+                <div className="flex items-center justify-center h-full text-slate-400"><Gamepad2 size={48} /></div>
+              )}
+              <div className="absolute top-3 left-3">
+                <span className="text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-wider shadow-sm bg-indigo-100 text-indigo-700">
+                  {game.platform}
+                </span>
+              </div>
+            </div>
+
+            <div className="p-6">
+              <h2 className="text-xl font-black text-slate-800 mb-6 leading-tight">{game.name.toUpperCase()}</h2>
+              <a href={game.link} target="_blank" rel="noopener noreferrer"
+                className="block w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black text-center py-4 rounded-2xl shadow-lg shadow-indigo-200 active:scale-95 transition-all text-base flex items-center justify-center gap-2">
+                <Download size={24} />
+                BAIXAR JOGO AGORA
+              </a>
+            </div>
+          </div>
+        ))}
+      </main>
+    </div>
+  );
 }
 
 function Login({ onLogin }) {
@@ -242,27 +931,15 @@ function Login({ onLogin }) {
         <div className="flex justify-center mb-6">
           <img src="/logo.png" alt="Logo" className="h-16 w-auto object-contain" />
         </div>
-        <h2 className="text-2xl font-bold text-center text-slate-800 mb-6">Acesso Restrito</h2>
+        <h2 className="text-2xl font-bold text-center text-slate-800 mb-6">Área Administrativa</h2>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-slate-600 mb-1">Email</label>
-            <input
-              type="email"
-              required
-              className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-            />
+            <input type="email" required className="w-full px-4 py-2 border rounded-xl" value={email} onChange={e => setEmail(e.target.value)} />
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-600 mb-1">Senha</label>
-            <input
-              type="password"
-              required
-              className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-            />
+            <input type="password" required className="w-full px-4 py-2 border rounded-xl" value={password} onChange={e => setPassword(e.target.value)} />
           </div>
           {error && <p className="text-red-500 text-sm text-center">{error}</p>}
           <button type="submit" className="w-full bg-indigo-600 text-white font-bold py-3 rounded-xl hover:bg-indigo-700 transition">
@@ -270,401 +947,6 @@ function Login({ onLogin }) {
           </button>
         </form>
       </div>
-    </div>
-  );
-}
-
-// --- MODO ADMINISTRADOR ---
-function AdminView({ onLogout }) {
-  const [games, setGames] = useState(() => {
-    const saved = localStorage.getItem('my_game_catalog_v2');
-    if (saved) return JSON.parse(saved);
-    // Se não tiver salvo, carrega o database inicial
-    return flattenDatabase(INITIAL_DATABASE);
-  });
-
-  const [selectedGames, setSelectedGames] = useState([]);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [activePlatform, setActivePlatform] = useState("Todos");
-  const [copied, setCopied] = useState(false);
-
-  // Modais e Edição
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [gameToEdit, setGameToEdit] = useState(null); // Jogo sendo editado
-  const [showMobileCart, setShowMobileCart] = useState(false);
-
-  // Estado para novo jogo (adicionado manualmente)
-  const [newGame, setNewGame] = useState({ name: '', platform: 'PSP', link: '', img: '' });
-
-  // Salvar alterações
-  useEffect(() => {
-    localStorage.setItem('my_game_catalog_v2', JSON.stringify(games));
-  }, [games]);
-
-  const filteredGames = useMemo(() => {
-    return games.filter(game => {
-      const matchesSearch = game.name.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesPlatform = activePlatform === "Todos" || game.platform === activePlatform;
-      return matchesSearch && matchesPlatform;
-    });
-  }, [games, searchTerm, activePlatform]);
-
-  const toggleGameSelection = (game) => {
-    // Se o jogo não tiver link, avisar
-    if (!game.link) {
-      if (window.confirm(`O jogo ${game.name} ainda não tem link de download. Deseja editar agora?`)) {
-        openEditModal(game);
-      }
-      return;
-    }
-
-    if (selectedGames.find(g => g.id === game.id)) {
-      setSelectedGames(selectedGames.filter(g => g.id !== game.id));
-    } else {
-      setSelectedGames([...selectedGames, game]);
-    }
-  };
-
-  const openEditModal = (game) => {
-    setGameToEdit({ ...game }); // Copia o objeto para edição
-  };
-
-  const handleSaveEdit = (e) => {
-    e.preventDefault();
-    if (!gameToEdit) return;
-
-    // Atualiza a lista principal de jogos
-    setGames(games.map(g => g.id === gameToEdit.id ? gameToEdit : g));
-
-    // Atualiza também se estiver selecionado
-    if (selectedGames.find(g => g.id === gameToEdit.id)) {
-      setSelectedGames(selectedGames.map(g => g.id === gameToEdit.id ? gameToEdit : g));
-    }
-
-    setGameToEdit(null);
-  };
-
-  const handleAddGame = (e) => {
-    e.preventDefault();
-    if (!newGame.name || !newGame.link) return;
-    const gameToAdd = { ...newGame, id: Date.now().toString() };
-    setGames([...games, gameToAdd]);
-    setNewGame({ name: '', platform: 'PSP', link: '', img: '' });
-    setShowAddModal(false);
-  };
-
-  const deleteFromLibrary = (id) => {
-    if (window.confirm("Deseja eliminar este jogo da sua biblioteca permanentemente?")) {
-      setGames(games.filter(g => g.id !== id));
-      setSelectedGames(selectedGames.filter(g => g.id !== id));
-    }
-  };
-
-  const shortenUrl = async (longUrl) => {
-    try {
-      const response = await fetch(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(longUrl)}`);
-      if (response.ok) {
-        return await response.text();
-      }
-    } catch (error) {
-      console.error("Erro ao encurtar link:", error);
-    }
-    return longUrl; // Fallback se falhar
-  };
-
-  const handleGenerateLink = async () => {
-    if (selectedGames.length === 0) return;
-    const jsonString = JSON.stringify(selectedGames);
-    const encodedData = btoa(jsonString);
-    const shareUrl = `${window.location.origin}/?data=${encodedData}`;
-
-    // Tenta encurtar o link para "camuflar"
-    const finalLink = await shortenUrl(shareUrl);
-
-    const message = `✅ Acesso liberado
-
-Os arquivos referentes à sua compra já estão disponíveis.
-
-🔗 Clique no link abaixo para acessar o conteúdo:
-${finalLink}
-
-Em caso de dúvidas, fale com o suporte.`;
-
-    try {
-      await navigator.clipboard.writeText(message);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      console.error('Erro ao copiar', err);
-      prompt("Copie a mensagem abaixo:", message);
-    }
-  };
-
-  // Reset database (útil para debug ou atualizar lista inicial)
-  const resetDatabase = () => {
-    if (window.confirm("Isso irá resetar todos os links editados para o padrão. Tem certeza?")) {
-      setGames(flattenDatabase(INITIAL_DATABASE));
-      setSelectedGames([]);
-    }
-  }
-
-  return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
-      {/* Header Admin */}
-      <header className="sticky top-0 z-30 bg-white border-b border-slate-200 px-4 py-3 md:px-8 md:py-6 shadow-sm">
-        <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center justify-between w-full sm:w-auto">
-            <div className="flex items-center gap-2">
-              <img src="/logo.png" alt="Logo" className="h-10 sm:h-12 w-auto object-contain" />
-            </div>
-            <button onClick={() => setShowAddModal(true)} className="sm:hidden bg-indigo-600 text-white p-3 rounded-xl shadow-lg active:scale-95 transition-transform">
-              <Plus size={24} />
-            </button>
-          </div>
-
-          <div className="relative w-full sm:max-w-xs">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
-            <input
-              type="text" placeholder="Procurar jogo..."
-              className="w-full pl-10 pr-4 py-3.5 bg-slate-100 border-none rounded-2xl focus:ring-2 focus:ring-indigo-500 transition-all text-base"
-              value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </div>
-
-          <div className="hidden sm:flex items-center gap-2">
-            <button onClick={onLogout} className="text-xs text-slate-400 hover:text-red-500 underline mr-4">Sair</button>
-            <button onClick={resetDatabase} className="text-xs text-slate-400 hover:text-red-500 underline mr-2">Resetar DB</button>
-            <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-3 rounded-xl font-bold text-sm shadow-md transition-all active:scale-95">
-              <Plus size={18} /> Adicionar
-            </button>
-          </div>
-        </div>
-      </header>
-
-      <main className="max-w-6xl mx-auto p-4 md:p-8 pb-32">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          <div className="lg:col-span-8">
-            <div className="flex gap-2 mb-6 overflow-x-auto pb-2 no-scrollbar px-1">
-              {PLATFORMS.map(p => (
-                <button key={p} onClick={() => setActivePlatform(p)}
-                  className={`px-6 py-3 rounded-2xl text-sm font-bold whitespace-nowrap transition-all border-2 flex-shrink-0 ${activePlatform === p ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg transform scale-105' : 'bg-white border-slate-200 text-slate-500 hover:border-indigo-300 shadow-sm'}`}>
-                  {p}
-                </button>
-              ))}
-            </div>
-
-            {/* GRID MOVEL OTIMIZADO: 2 Colunas no Mobile */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
-              {filteredGames.map(game => {
-                const isSelected = selectedGames.find(g => g.id === game.id);
-                return (
-                  <div key={game.id} onClick={() => toggleGameSelection(game)}
-                    className={`relative group rounded-2xl border-2 transition-all cursor-pointer overflow-hidden ${isSelected ? 'bg-indigo-50 border-indigo-500 shadow-md ring-2 ring-indigo-200' : 'bg-white border-white shadow-sm'}`}>
-
-                    {/* Capa do Jogo */}
-                    <div className="aspect-[3/4] bg-slate-200 w-full relative">
-                      {game.img && game.img !== "EMBREVE.png" ? (
-                        <img src={game.img} alt={game.name} className="w-full h-full object-cover"
-                          onError={(e) => { e.target.onerror = null; e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex' }} />
-                      ) : null}
-                      <div className="absolute inset-0 flex items-center justify-center bg-slate-200 text-slate-400" style={{ display: (game.img && game.img !== "EMBREVE.png") ? 'none' : 'flex' }}>
-                        <ImageOff size={24} />
-                      </div>
-                      {/* Gradiente para texto */}
-                      <div className="absolute inset-0 bg-gradient-to-t from-slate-900/90 via-slate-900/40 to-transparent flex flex-col justify-end p-3">
-                        <span className={`self-start text-[8px] sm:text-[10px] font-black px-1.5 py-0.5 rounded-md uppercase mb-1 shadow-sm ${game.platform === 'PS4' ? 'bg-blue-600 text-white' :
-                          game.platform === 'PS3' ? 'bg-blue-400 text-white' :
-                            game.platform === 'PS2' ? 'bg-slate-800 text-white' :
-                              game.platform === 'Xbox 360' ? 'bg-green-600 text-white' : 'bg-orange-500 text-white'
-                          }`}>{game.platform}</span>
-                        <h3 className="font-bold text-white text-xs sm:text-sm leading-tight drop-shadow-md line-clamp-2">{game.name}</h3>
-                      </div>
-                    </div>
-
-                    {/* Ações */}
-                    <div className="p-2 sm:p-3 flex items-center justify-between bg-white text-xs">
-                      <div className="flex flex-col">
-                        <span className={`font-black ${game.link ? 'text-emerald-500' : 'text-red-400'}`}>
-                          {game.link ? 'LINK OK' : 'SEM LINK'}
-                        </span>
-                      </div>
-                      <div className="flex gap-1 sm:gap-2">
-                        <button onClick={(e) => { e.stopPropagation(); openEditModal(game); }}
-                          className="p-1.5 sm:p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-full transition-colors" title="Editar Link">
-                          <Edit2 size={16} />
-                        </button>
-                        {isSelected ? (
-                          <div className="p-1.5 sm:p-2 bg-indigo-600 rounded-full text-white shadow-md">
-                            <CheckCircle size={16} />
-                          </div>
-                        ) : (
-                          <div className="p-1.5 sm:p-2 border border-slate-200 rounded-full text-transparent group-hover:border-slate-300">
-                            <CheckCircle size={16} />
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="hidden lg:block lg:col-span-4">
-            <div className="bg-slate-900 rounded-3xl p-6 text-white sticky top-28 border border-slate-800 shadow-xl">
-              <SelectionPanel selectedGames={selectedGames} removeGame={(id) => setSelectedGames(selectedGames.filter(g => g.id !== id))} handleGenerateLink={handleGenerateLink} copied={copied} />
-            </div>
-          </div>
-        </div>
-      </main>
-
-      {/* Modal Mobile */}
-      {selectedGames.length > 0 && (
-        <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 px-4 pb-6 pt-4 bg-gradient-to-t from-slate-50 to-transparent">
-          <button onClick={() => setShowMobileCart(true)} className="w-full bg-slate-900 text-white rounded-2xl py-5 px-6 flex items-center justify-between shadow-2xl active:scale-95 transition-transform">
-            <div className="flex items-center gap-3">
-              <div className="bg-indigo-500 text-white w-8 h-8 rounded-full flex items-center justify-center font-black text-sm">{selectedGames.length}</div>
-              <span className="font-bold text-base">Gerar Link ({selectedGames.length})</span>
-            </div>
-            <ChevronUp size={24} className="animate-bounce" />
-          </button>
-        </div>
-      )}
-
-      {/* Modal Edição de Link (Simples e Rápido) */}
-      {gameToEdit && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm" onClick={() => setGameToEdit(null)} />
-          <form onSubmit={handleSaveEdit} className="relative bg-white w-full max-w-sm sm:max-w-md rounded-3xl p-6 shadow-2xl animate-in fade-in zoom-in duration-200">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-black text-slate-800">EDITAR LINK</h2>
-              <button type="button" onClick={() => setGameToEdit(null)} className="p-3 bg-slate-100 rounded-full active:bg-slate-200"><X size={24} /></button>
-            </div>
-            <div className="mb-6">
-              <p className="text-sm font-bold text-slate-500 mb-1">Jogo:</p>
-              <p className="text-lg font-black text-slate-800 leading-tight">{gameToEdit.name} ({gameToEdit.platform})</p>
-            </div>
-            <div className="space-y-4">
-              <input autoFocus required type="text" placeholder="Cole o Link de Download aqui..."
-                className="w-full p-4 bg-indigo-50 border-2 border-indigo-100 rounded-2xl outline-none font-mono text-base focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/20 transition-all"
-                value={gameToEdit.link} onChange={e => setGameToEdit({ ...gameToEdit, link: e.target.value })} />
-            </div>
-            <button type="submit" className="w-full bg-indigo-600 text-white font-black py-4 rounded-2xl mt-8 flex items-center justify-center gap-2 hover:bg-indigo-700 active:scale-95 transition-all text-lg shadow-lg shadow-indigo-200">
-              <Save size={24} /> SALVAR LINK
-            </button>
-            <button type="button" onClick={() => {
-              if (window.confirm("Apagar este jogo?")) { deleteFromLibrary(gameToEdit.id); setGameToEdit(null); }
-            }} className="w-full text-red-500 font-bold py-4 mt-2 text-sm active:bg-red-50 rounded-xl">Excluir Jogo da Lista</button>
-          </form>
-        </div>
-      )}
-
-      {/* Modal Novo Jogo */}
-      {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm" onClick={() => setShowAddModal(false)} />
-          <form onSubmit={handleAddGame} className="relative bg-white w-full max-w-sm sm:max-w-md rounded-3xl p-6 shadow-2xl animate-in fade-in zoom-in duration-200 text-slate-900">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-black text-slate-800">Adicionar Jogo</h2>
-              <button type="button" onClick={() => setShowAddModal(false)} className="p-3 bg-slate-100 rounded-full active:bg-slate-200"><X size={24} /></button>
-            </div>
-            <div className="space-y-4">
-              <input required type="text" placeholder="Nome do Jogo" className="w-full p-4 bg-slate-50 border rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500" value={newGame.name} onChange={e => setNewGame({ ...newGame, name: e.target.value })} />
-              <select className="w-full p-4 bg-slate-50 border rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500" value={newGame.platform} onChange={e => setNewGame({ ...newGame, platform: e.target.value })}>
-                {PLATFORMS.filter(p => p !== "Todos").map(p => <option key={p} value={p}>{p}</option>)}
-              </select>
-              <input type="text" placeholder="Link da Capa (Opcional)" className="w-full p-4 bg-slate-50 border rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500" value={newGame.img} onChange={e => setNewGame({ ...newGame, img: e.target.value })} />
-              <input required type="text" placeholder="Link Download" className="w-full p-4 bg-slate-50 border rounded-2xl outline-none font-mono focus:ring-2 focus:ring-indigo-500" value={newGame.link} onChange={e => setNewGame({ ...newGame, link: e.target.value })} />
-            </div>
-            <button type="submit" className="w-full bg-indigo-600 text-white font-black py-4 rounded-2xl mt-8 flex items-center justify-center gap-2 hover:bg-indigo-700 active:scale-95 transition-all text-lg shadow-lg">
-              <Save size={24} /> SALVAR JOGO
-            </button>
-          </form>
-        </div>
-      )}
-
-      {showMobileCart && (
-        <div className="fixed inset-0 z-50 lg:hidden">
-          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowMobileCart(false)} />
-          <div className="absolute bottom-0 left-0 right-0 bg-slate-900 rounded-t-[2.5rem] p-6 text-white max-h-[90vh] overflow-y-auto shadow-2xl animate-in slide-in-from-bottom duration-300">
-            <SelectionPanel selectedGames={selectedGames} removeGame={(id) => setSelectedGames(selectedGames.filter(g => g.id !== id))} handleGenerateLink={handleGenerateLink} copied={copied} isMobile={true} />
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function SelectionPanel({ selectedGames, removeGame, handleGenerateLink, copied, isMobile = false }) {
-  return (
-    <div className="flex flex-col h-full">
-      <div className={`space-y-3 mb-6 overflow-y-auto custom-scrollbar ${isMobile ? 'max-h-[50vh]' : 'max-h-[400px]'}`}>
-        {selectedGames.map(game => (
-          <div key={game.id} className="flex items-center justify-between bg-slate-800/50 p-3 rounded-2xl border border-slate-700">
-            <div className="flex items-center gap-3 overflow-hidden">
-              {/* Mini Capa */}
-              <div className="w-12 h-12 bg-slate-700 rounded-lg flex-shrink-0 overflow-hidden">
-                {game.img ? <img src={game.img} className="w-full h-full object-cover" onError={(e) => e.target.style.display = 'none'} /> : null}
-              </div>
-              <div className="truncate pr-2">
-                <p className="font-bold text-sm truncate uppercase tracking-tight">{game.name}</p>
-                <p className={`text-[10px] font-black uppercase tracking-wider ${game.platform === 'Xbox 360' ? 'text-green-400' : 'text-indigo-400'}`}>{game.platform}</p>
-              </div>
-            </div>
-            <button onClick={() => removeGame(game.id)} className="text-slate-500 p-3 hover:text-red-400 transition-colors active:bg-slate-700 rounded-full"><Trash2 size={20} /></button>
-          </div>
-        ))}
-        {selectedGames.length === 0 && <div className="text-center text-slate-500 py-10 opacity-50">Nenhum jogo selecionado</div>}
-      </div>
-      <button onClick={handleGenerateLink}
-        className={`w-full font-black py-5 rounded-2xl flex items-center justify-center gap-3 transition-all active:scale-95 shadow-xl text-lg ${copied ? 'bg-emerald-500 text-white shadow-emerald-500/20' : 'bg-indigo-500 text-white shadow-indigo-500/20'}`}>
-        {copied ? <CheckCircle size={24} /> : <LinkIcon size={24} />}
-        {copied ? "LINK COPIADO!" : "GERAR LINK P/ CLIENTE"}
-      </button>
-    </div>
-  );
-}
-
-// --- MODO CLIENTE ---
-function ClientView({ games }) {
-  return (
-    <div className="min-h-screen bg-slate-100 font-sans pb-20">
-      <header className="bg-indigo-600 text-white p-6 shadow-lg mb-8 text-center sticky top-0 z-30">
-        <h1 className="text-2xl font-black tracking-tight mb-2">SEUS JOGOS CHEGARAM! 🎮</h1>
-        <p className="text-indigo-100 text-sm">Clique abaixo para baixar cada jogo.</p>
-      </header>
-      <main className="max-w-md mx-auto px-4 space-y-4">
-        {games.map((game, index) => (
-          <div key={index} className="bg-white rounded-3xl shadow-md border-b-4 border-indigo-100 hover:border-indigo-200 transition-all transform hover:-translate-y-1 overflow-hidden">
-            {/* Capa Cliente */}
-            <div className="h-48 bg-slate-200 w-full relative">
-              {game.img && game.img !== "EMBREVE.png" ? (
-                <img src={game.img} alt={game.name} className="w-full h-full object-cover" />
-              ) : (
-                <div className="flex items-center justify-center h-full text-slate-400"><Gamepad2 size={48} /></div>
-              )}
-              <div className="absolute top-3 left-3">
-                <span className={`text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-wider shadow-sm ${game.platform === 'Xbox 360' ? 'bg-green-100 text-green-700' : 'bg-indigo-100 text-indigo-700'
-                  }`}>
-                  {game.platform}
-                </span>
-              </div>
-            </div>
-
-            <div className="p-6">
-              <h2 className="text-xl font-black text-slate-800 mb-6 leading-tight">{game.name.toUpperCase()}</h2>
-              <a href={game.link} target="_blank" rel="noopener noreferrer"
-                className="block w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black text-center py-4 rounded-2xl shadow-lg shadow-indigo-200 active:scale-95 transition-all text-base flex items-center justify-center gap-2">
-                <Download size={24} />
-                BAIXAR JOGO AGORA
-              </a>
-            </div>
-          </div>
-        ))}
-        <div className="text-center mt-12 opacity-50">
-          <p className="text-xs font-bold text-slate-400">JOGOS SELECIONADOS PELO VENDEDOR</p>
-        </div>
-      </main>
     </div>
   );
 }
