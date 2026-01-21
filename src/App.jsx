@@ -529,7 +529,7 @@ function StoreView({ initialPlatform = "Todos", onBack }) {
 
       {/* Floating WhatsApp Button */}
       <a
-        href="https://wa.me/5511999999999" // TODO: Add real number
+        href="https://wa.me/5521996567301" // TODO: Add real number
         target="_blank"
         rel="noopener noreferrer"
         className="fixed bottom-24 right-4 z-40 bg-green-500 text-white p-4 rounded-full shadow-lg hover:bg-green-600 transition-all hover:scale-110 flex items-center justify-center"
